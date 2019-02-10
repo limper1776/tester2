@@ -1,3 +1,4 @@
+
 #include <sys/time.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,7 +11,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#define PORT "1776" 
+#define PORT "1776"
 #define MAXDATASIZE 100
 #define FAMILY AF_INET
 #define SOCKTYPE SOCK_STREAM
@@ -21,30 +22,37 @@ void setup_fd_sets(int socket_fd, fd_set *read_fd)
         FD_ZERO(read_fd);
         FD_SET(STDIN_FILENO, read_fd);
         FD_SET(socket_fd, read_fd);
-        
+
 }
+
 
 void receive_message(int socket_fd, char *in_buf)
 {
     int msg_len;
-    
+
     // Empty buffer and store incoming message
     memset(in_buf, 0, (sizeof in_buf));
-    msg_len = recv(socket_fd, in_buf, MAXDATASIZE, 0);
+    if((msg_len = recv(socket_fd, in_buf, MAXDATASIZE, 0)) == -1)
+    {
+        perror("recv: ");
+    }
     // End message with terminating char
     in_buf[msg_len] = '\0';
 }
 
 void print_message(char *message)
 {
-    printf("Server reply: %s\n", message);
+    printf("== Server Reply == \n%s\n", message);
 }
 
 void handle_stdin(char *out_buf)
 {
     // Read in message
     int msg_len;
-    msg_len = read(STDIN_FILENO, out_buf, MAXDATASIZE);
+    if((msg_len = read(STDIN_FILENO, out_buf, MAXDATASIZE)) == -1)
+    {
+        perror("read: dis");
+    }
     // Place terminating char at end
     if (msg_len > 0 && out_buf[msg_len - 1] == '\n')
         out_buf[msg_len - 1] = '\0';
@@ -56,9 +64,30 @@ void set_hint_options(struct addrinfo *hints)
     hints->ai_socktype = SOCKTYPE;
 }
 
-int connect_to_server(struct addrinfo *serv_info, int socket_fd)
+int connect_to_server(struct addrinfo *serv_info, struct addrinfo *temp, int *socket_fd)
 {
-    
+    for(temp = serv_info; temp != NULL; temp = temp->ai_next)
+    {
+        if ((*socket_fd = socket(temp->ai_family, temp->ai_socktype,
+                temp->ai_protocol)) == -1) {
+            perror("client: socket");
+            continue;
+        }
+
+        if (connect(*socket_fd, temp->ai_addr, temp->ai_addrlen) == -1) {
+            close(*socket_fd);
+            perror("client: connect");
+            continue;
+        }
+
+        break;
+    }
+
+    if (temp == NULL)
+    {
+        fprintf(stderr, "client: failed to connect\n");
+        exit(0);
+    }
 }
 
 // get sockaddr, IPv4 or IPv6:
@@ -76,83 +105,67 @@ int main(int argc, char *argv[])
     int socket_fd, numbytes;
     char in_buf[MAXDATASIZE], out_buf[MAXDATASIZE];
     struct addrinfo hints, *serv_info;
-    char s[INET6_ADDRSTRLEN];
-    
+    char server_name[INET6_ADDRSTRLEN];
+
     fd_set read_fd;
 
     if (argc != 2) {
-        fprintf(stderr,"usage: client hostname\n");
-        exit(1);
+        fprintf(stderr,"Enter hostname as argument.\n");
+        exit(0);
     }
 
     // Clear out hints and set for IPv4, TCP
     memset(&hints, 0, sizeof hints);
     set_hint_options(&hints);
-    
+
     // store server info in serv_info
     getaddrinfo(argv[1], PORT, &hints, &serv_info);
-    
-    // connect_to_server(&serv_info, socket_fd);
 
-    // loop through all the results and connect to the first we can
     struct addrinfo *temp;
-    for(temp = serv_info; temp != NULL; temp = temp->ai_next)
-    {
-        if ((socket_fd = socket(temp->ai_family, temp->ai_socktype,
-                temp->ai_protocol)) == -1) {
-            perror("client: socket");
-            continue;
-        }
+    connect_to_server(serv_info, temp, &socket_fd);
 
-        if (connect(socket_fd, temp->ai_addr, temp->ai_addrlen) == -1) {
-            close(socket_fd);
-            perror("client: connect");
-            continue;
-        }
-
-        break;
-    }
-
-    if (temp == NULL) {
-        fprintf(stderr, "client: failed to connect\n");
-        return 2;
-    }
-
-    inet_ntop(temp->ai_family, get_in_addr((struct sockaddr *)temp->ai_addr), s, sizeof s);
-    printf("client: connecting to %s\n", s);
+    // inet_ntop(temp->ai_family, get_in_addr((struct sockaddr *)temp->ai_addr), server_name, sizeof server_name);
+    // printf("client: connecting to %server_name\n", server_name);
+    printf("Connecting...\n");
 
     // Free up structure
     freeaddrinfo(serv_info);
-    
+
     // Run continuously
     while (1)
     {
         setup_fd_sets(socket_fd, &read_fd);
-        
+
         // Wait for activity indefinitely
         // Only one socket, so max fd is socket_fd
-        select(socket_fd + 1, &read_fd, NULL, NULL, NULL);
-        
+        if(select(socket_fd + 1, &read_fd, NULL, NULL, NULL) == -1)
+        {
+            perror("select(): ");
+            printf("blaasd");
+
+            exit(0);
+        }
+
         // If triggered by incoming data from server
         if(FD_ISSET(socket_fd, &read_fd))
         {
             receive_message(socket_fd, in_buf);
             print_message(in_buf);
         }
-        
+
         // If triggered by user input
         if(FD_ISSET(STDIN_FILENO, &read_fd))
         {
             // prepare send buffer
             handle_stdin(out_buf);
-            
+
             // send message to server
             send(socket_fd, out_buf, strlen(out_buf), 0);
-            
+
             // clear out stin buffer
             fflush(STDIN_FILENO);
         }
-        
+
     }
 
 
