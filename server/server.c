@@ -23,10 +23,7 @@ struct tester
 {
 	bool is_struct;
 	int struct_num;
-	struct start_wars
-	{
-		bool nested_struct;
-	}
+	float yikes;
 }
 
 
