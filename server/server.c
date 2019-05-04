@@ -19,6 +19,12 @@
 #define BUFFERSIZE 1024
 #define USERNAMESIZE 25
 
+struct tester
+{
+	bool is_struct;
+	int struct_num;
+}
+
 
 
 struct client
