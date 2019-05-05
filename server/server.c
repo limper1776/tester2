@@ -24,6 +24,7 @@ struct tester
 	bool is_struct;
 	int struct_num;
 	float yikes;
+	int clans_war;
 }
 
 
